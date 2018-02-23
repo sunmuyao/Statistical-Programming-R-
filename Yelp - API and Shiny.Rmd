@@ -1,0 +1,279 @@
+---
+title: "Yelp - API and Shiny"
+output: html_document
+runtime: shiny
+---
+
+### Pin Down the Topic
+
+In order to visualize and analysis diet structure of local residents in the major cities of the Unites State, we take advantage of the restaurant information from the yelp API. The main techniques our group implemented is including but not limited to *dplyr*, *data visualization and exploration (ggplot)*, *web information scraping*, *cleaning data (regularization expression and map function)*, *functional programming*, *shiny* as well as *parallelization*, etc.
+
+
+### Get City Table & Gather Information from Yelp API
+
+To take a peep at the tons of information provided by yelp website, we narrow down the location to only 20 cities with the highest population density by scrapping, cleaning up, and ranking the table on Wikipedia (https://en.wikipedia.org/wiki/List_of_United_States_cities_by_population). Since yelp API request enables a maximum of 40 url’s per page, we vary the other parameter `offset` -- the number of pages to get a total of 520 observations (40 per page * 13 pages). For each of these cities, we select the first 520 “best-matched” restaurants given by yelp. Each city is multiplied by each page using `outer` function. Since the data given back from yelp are all lists of columns, we clean up its format and select important and useful variables in the `getDf` function such as rating, reviews counts and categories, which will be used to create interactive plots.
+
+
+
+```{r}
+#loading the packages
+library(rvest)
+library(dplyr)
+library(stringr)
+library(htmltab)
+
+#getting the url of the webpage
+url = "https://en.wikipedia.org/wiki/List_of_United_States_cities_by_population"
+
+#scrapping the table from the wikipedia and saving it as dataframe
+population = htmltab(doc = url, which = "//*[@id='mw-content-text']/table[4]") %>%
+  as.data.frame()
+
+#extracting numbers from the `2010 population density` column
+population$`2010 population density` = gsub(x = population$`2010 population density`,
+                                            pattern = "(.*\\s)(\\d+.{0,1}\\d+)(.*)", replace = "\\2")
+
+#arranging the table with the order of 2010 population density
+population$`2010 population density` = str_replace(population$`2010 population density`, ",","")%>%as.numeric()
+table = population %>%
+  arrange(desc(`2010 population density`)) %>%
+  head(.,20)
+
+#getting the city names from the re-arranged dataframe
+City_name = table$City %>% str_replace(" ","")
+
+```
+
+
+```{r}
+# #loading the packages
+# library(dplyr)
+# library(parallel)
+# require(httr)
+# require(httpuv)
+# require(jsonlite)
+# 
+# #authorization step
+# #setting variables for the validation of scrapping
+# consumerKey = "-PPitwpvzIKTO4kzMT_u5g"
+# consumerSecret = "5LSxS2M4ht4Xq-J7pSTjtt879Do"
+# token = "cgZvBMDN6UnT-KPLrfeD0gX0rTNR18ls"
+# token_secret = "cKlcQEUDE6PW_4SVA69fEQ11Z_A"
+# 
+# #connecting to yelp database
+# myapp = oauth_app("YELP", key=consumerKey, secret=consumerSecret)
+# sig=sign_oauth1.0(myapp, token=token,token_secret=token_secret)
+# 
+# #Number of business results to return
+# 
+# #Offsetting the list of returned business results by this amount
+# offset = seq(from = 0, to = 480, by = 40)
+# 
+# #defining a paste function which returning a combined url
+# pasteFun = function(a, b){
+#   return(paste0("http://api.yelp.com/v2/search/?limit=40&term=restaurant&location=",a,"&offset=",b))
+# }
+# 
+# #using outer function to get all of urls
+# yelpurl = outer(City_name, offset, pasteFun) 
+# 
+# #setting all urls as a vector
+# yelpurl = as.vector(t(yelpurl))
+# 
+# #defining a function to get all desired information from the yelp api and saving them as a dataframe
+# getDf = function(url) {
+#   #getting the location data of url
+#   locationdata = GET(url, sig)
+#   locationdataContent = content(locationdata)
+#   #getting the detailed address of restaurant
+#   location = jsonlite::fromJSON(toJSON(locationdataContent$businesses[[1]]$location))
+#   #choosing "city", "postal_code", "address", "coordinate" and "state_code" columns
+#   locaDf = data.frame(t(sapply(location,c))) %>%
+#     select(city, postal_code, address, coordinate, state_code)
+#   locationdataList = jsonlite::fromJSON(toJSON(locationdataContent))
+#   #choosing "rating", "review_count", "name", "categories", and "phone" columns
+#   busiDf = locationdataList$businesses %>% 
+#     select(rating, review_count, name, categories, phone)
+#   #combining two dataframe together
+#   return(cbind(busiDf, locaDf))
+# } 
+# 
+# #using the mclappy with 24 cores to reduce running time
+# listDf = mclapply(yelpurl, getDf, mc.cores=24)
+# #getting yelp_data dataframe by combining all rows 
+# yelp_data = bind_rows(listDf)
+# 
+# #saving the data
+# save(yelp_data,
+#      file = "yelp.RData")
+
+```
+
+
+
+### Visualization and Analysis with Shiny
+
+In this part, we mainly assemble all the pieces that have already completed in the previous tasks together and show their visualization in the shiny app. Basically, in the side-bar-panel, users are allowed to choose a city from the dropdown menu to see the best matched restaurants on the map. All the cities in the menu come from the table we grabbed from Wikipedia, which are the top 20 U.S. cities with high population density. Moreover, there are two check boxes for detailed information shown on the map, one refers to customer rating and the other is the total review count. If the “Rating” box is checked by the user, the transparency of representing points on the map will increase as the restaurants with higher rating. Besides, if the “Review Count” box is checked, the radius of representing points will increase as the total review counts increase. A pie chart contained the city’s popular food type information is shown under the two check boxes.
+
+One of the most interesting features of our group “website” is that we could visualize the food type distribution of each city. User could choose one of the cities with the top 20 largest population density among all of cities in the United State. Once the user’s target city is selected, the corresponding information would be pulled out from our database automatically. Each restaurant type is sorted by frequency from high to low. Finally, the top 10 popular type will show on the users' interface as well as a pie chart containing proportional information. This information is useful since it could reflect the diet structure of the local resident. Moreover, it also implicitly reflects the local geographical characteristics and even income and consumption level of the local resident.
+
+For example, when you search city--Cambridge, the *seafood* ranks #1. It makes a lot of sense since the Cambridge located just next to the Charles River where people could access seafood much easier than inland city. However, for the inland city such as Chicago, the restaurant type *bar* ranks #1. It is a quite interesting phenomenon that it implies Chicago residents would probably prefer going to bar.
+
+In the main panel, the U.S. map would display based on the city the user selected in the side-bar-panel. If no city is selected in the side-bar-panel, only pinpoints will show on the map and users are allowed to click the pinpoints to show city names. If the city input is available, the red representing points located by their longitudes and latitudes will show on the map and they will change their transparency and size with different customized information. Users can click the representing points to see which restaurants are recommended by Yelp near their current location. The Shiny App default presents forty restaurants on the interface. 
+
+
+```{r, warning=FALSE, message=FALSE}
+##############################data###########
+load("yelp.RData")
+library(dplyr)
+coord <- yelp_data$coordinate %>% unlist %>% matrix(ncol=2,byrow = TRUE) #Get longitude and latitude 
+yelp_data <- yelp_data %>% mutate(lat = coord[,1]) %>% mutate(long = coord[,2]) #Combine longitude and latitude with the original dataframe
+##############################shiny###########
+library(shiny)
+library(leaflet)
+library(dplyr)
+library(RColorBrewer)
+library(ggplot2)
+library(purrr)
+
+
+shinyApp(
+  ui = fluidPage(
+    titlePanel("Yelp"),
+    sidebarLayout(
+      sidebarPanel(
+        selectInput("city","select a city",c("",sort(table$City))),          
+        hr(),
+        checkboxGroupInput("checkGroup1", label = h5("Circle Property"),  #check box
+                           choices = list("Rating (opacity)"="rating","Review Count (radius)"="review_count"),inline=TRUE),
+        hr()
+      ),
+      mainPanel(
+        textOutput("text1"),                                              #text
+        hr(),
+        leafletOutput('Map'),                                             #map
+        tags$div(id="cite",
+                 'Data from', tags$em('Wikipedia'), 'and',tags$em('Yelp'),
+        hr(),
+        plotOutput("pieplot")                 #pie plot
+        )
+      )
+    )
+  ),
+  server = function(input, output,session) {
+    ###plot
+    df1=reactive({
+      DF = NULL 
+      data = yelp_data[which(yelp_data$city==input$city),]                #Get data for each city
+      tab = unique(map_chr(data$categories,1))                            #Use text mapping to extract food type
+      category=NULL
+      for(i in seq_along(tab)){
+        pattern = agrep(tab[i], data$categories)                          #Match the data with pattern
+        count1 = length(pattern)                                          #Count the number for each food style
+        temp = as.data.frame(cbind(tab[i],count1))                        #Combine the food style and its total count into a dataframe
+        category=rbind(category,temp)
+      }
+      category$count1 = as.integer(as.vector(category$count1))            
+      category = head(category[order(category$count1, decreasing = TRUE), ],10) #Only remain the top 10 food style for each city
+      category$city = rep(input$city, 10)
+      names(category)=c("type","count","city")
+      return(category)
+    })
+    
+    output$pieplot=renderPlot({
+      if (input$city == ""){                                                    #If no city input, no plot will show on the interface
+        return(NULL)
+      }else{                                                                    #If a city is selected, a pie chart will show the food style distribution
+        ggplot(df1(),aes(x="",y=count,fill=type))+geom_bar(width=1,stat="identity")+
+          coord_polar("y",start=0)+
+          theme_bw()
+      }
+    })
+    
+    ###Map
+    output$Map <- renderLeaflet({
+      
+      city1 <- input$city
+      ###if no city selected
+      if (city1 == ""){                                                           #Obtain city location
+        yelp_data1 <- yelp_data%>% select(city,lat,long) %>% mutate(city = unlist(city)) %>% 
+          group_by(city) %>% mutate(lat = mean(lat),long = mean(long),name = city) %>%
+          unique() %>% as_data_frame()
+        
+        zo <- 4                                                                   #Default zoom size
+        lng1 <- -93.85                                                            #Default center's longitude
+        lat1 <- 37.45                                                             #Default center's latitude
+        
+        leaflet() %>%
+          addTiles(                                                               #Load map from the website
+            urlTemplate = "//{s}.tiles.mapbox.com/v3/jcheng.map-5ebohr46/{z}/{x}/{y}.png",
+            attribution = 'Maps by <a href="http://www.mapbox.com/">Mapbox</a>'
+          ) %>%
+          addMarkers(                                                             #Draw pinpoints
+            lng = yelp_data1$long, lat = yelp_data1$lat, 
+            popup=yelp_data1$name)%>%
+          setView(lng = lng1, lat = lat1, zoom = zo)
+        
+      }else{
+      ###if a city is selected
+        yelp_data1 = yelp_data %>%                                                 #Combine restaurant information in the same location
+          filter(city == city1)%>%
+          select(name,long,lat,rating,review_count) %>% 
+          group_by(long,lat) %>% 
+          mutate(name = list(name),rating=mean(as.numeric(rating)),review_count=mean(as.numeric(review_count))) %>%
+          unique()
+        ###default circle radius&opacity
+        rad = mean(yelp_data1$review_count)
+        alp = 0.5
+        ###circle opacity changes according to restaurant rating
+        if (any(input$checkGroup1=="rating")){
+          alp = (yelp_data1$rating/max(yelp_data1$rating))^10                      #Use power 10 to change the magitude of rating
+        }
+        ###circle radius changes according to restaurant review count
+        if (any(input$checkGroup1=="review_count")){
+          rad = yelp_data1$review_count*2                                          #Times 2 to expand the scale of review count
+        }
+        ###Lists containing restaurants in the same location
+        cont <- NULL         
+        for (i in 1:nrow(yelp_data1)){
+          yelp_data2 = yelp_data1$name[[i]]
+          cont1 <- NULL
+          for (j in 1:length(yelp_data2)){
+            cont1 = paste( sep = "<br/>",cont1,yelp_data2[[j]])
+          }
+          cont <- c(cont,cont1)
+        }
+        ###map
+        zo <-12
+        lng1 <- mean(yelp_data1$long)
+        lat1 <- mean(yelp_data1$lat)
+        
+        leaflet() %>%
+          addTiles(
+            urlTemplate = "//{s}.tiles.mapbox.com/v3/jcheng.map-5ebohr46/{z}/{x}/{y}.png",
+            attribution = 'Maps by <a href="http://www.mapbox.com/">Mapbox</a>'
+          ) %>%
+          addCircles(yelp_data1$long, lat = yelp_data1$lat,stroke = FALSE,       #Add representing circle located by longitude and latitude 
+                     color = "#FF0000",
+                     radius = rad,  opacity = alp,fillOpacity =alp,
+                     popup =cont,
+                     options = popupOptions(closeButton = TRUE)
+          )%>%
+          setView(lng = lng1, lat = lat1, zoom = zo)
+      }
+    })
+    
+###instruction
+    output$text1 <- renderText({
+      if (input$city == ""){
+      "Please click pinpoints to see city names"
+      }else{
+        "Please click circles to see the local best match restaurants"
+      }
+    })
+  }
+)
+
+```
+
+In conclusion, as the extension of the yelp app, our group finish and complete the project goal. Our team fully takes advantage of the knowledge we have learnt of this whole semester. 

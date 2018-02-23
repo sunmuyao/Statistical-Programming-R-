@@ -1,0 +1,260 @@
+---
+title: "Dark Sky - API and Shiny"
+output: rmarkdown::html_document
+runtime: shiny
+---
+
+
+### Shiny Weather
+
+Dark Sky is an iOS and a website that provides "hyperlocal" weather forecasts. They make their data available to third parties via a web API which we will be using to create a simple shiny app. 
+
+In order to access this API you need an account - if you go to https://darksky.net/dev/ you can sign up for an API account. Once you have registered you will have access to a usage console that includes a unique secret key (the long alphanumeric string at the bottom of the page) you will use to access the API. You can make up to 1000 API requests per day without incurring any cost, so there is no need to enter any billing information.
+
+Documentation for the Dark Sky API can be found [here](https://darksky.net/dev/docs) and includes all information about how to create a properly formated API request and the details of the JSON format of the returned data.
+
+
+#### Task 1 - Getting data from Dark Sky (30 pts)
+
+Your first task is to write a single function that accepts an API key, latitude, longitude, and optionally a date and returns a data frame containing the hourly forecast for the given location (and time). The Dark Sky forecast API provides a number of different weather related predictions - all of these quantities should be returned by your function along with a properly formated datetime column. You do not need to return any of the currently, minutely, daily or other data. Note that you can exclude some of these results via your API request.
+
+Some additional requirements:
+
+* If no date is provided the results should be the hourly forecast for the next two days, this is the default behavior of a [Forecast Request](https://darksky.net/dev/docs/forecast).
+
+* If a date is provided then hourly forecast data for the two days *prior* and two days *following* that date should be returned - this can be achieved via a [Time Machine Request](https://darksky.net/dev/docs/time-machine). 
+
+
+<hr/>
+
+For the task1, I wrote a function called get_darksky, which allowed users to input key, latitude, longitude and a specific date. Since the users may not input any date, I separated these conditions by checking if the date was missing. If the date was missing, I would allow the function to return hourly forecasts for the next two days, which was the default setting in Dark Sky Forecast Request. If the date was specified by the users, I would allow the function to return the hourly forecast for two days prior and two days following, which was achieved by a loop. In this loop, I let the initial date be the first day in this four-day period, then converted the date to UNIX timestamp that can be used in url and finally stored hourly forecast downloaded from Dark Sky Time Machine Request. After the loop, I combined the four data frames into one data frame, which had the same name with the data frame I got under missing date condition. In order to be readble for the users, I converted UNIX timestamp back to normal form of date and added a new column to the hourly forecasts data frame. Finally, I returned a data table from the function.
+
+
+```{r}
+library(jsonlite)                                   #necessary libraries
+library(data.table)
+library(lubridate)
+library(dplyr)
+get_darksky = function(key, lat, long, date)
+{ 
+  url_o <- 'https://api.darksky.net/forecast/'      #initial part of website address
+  if(missing(date)){                                #the condition that users do not input date
+    url <- paste(paste(paste(paste(url_o, key, sep = ""), lat, sep = "/"), long, sep = ","), "?exclude=currently,minutely,daily,alerts,flags", sep = "") #create the url without date information
+    weather <- fromJSON(txt=url)                    #get JSON data from Dark Sky App
+    wea_h <- data.table(weather$hourly$data)        #store hourly forecasts
+    timezone <- weather$timezone                    #store the location's timezone
+  }else{                                            #the condition that users input date
+    date_ori <- as_date(date) - days(2)             #initial date for the loop
+    wea_list <- list()                              #prepare a list to store data frames
+    for(i in 1:4){                                  #create a loop to download two days prior and two days following hourly forecasts
+      date <- date_ori + days(i - 1)                #get date  
+      unix_date <- as.numeric(as.POSIXct(date, format="%Y-%m-%d")) #covert date to UNIX timestamp
+      url <- paste(paste(paste(paste(paste(url_o, key, sep = ""), lat, sep = "/"), long, sep = ","), unix_date, sep = ","), "?exclude=currently,minutely,daily,alerts,flags", sep = "")  ##create the url with UNIX date information
+      weather <- fromJSON(txt=url)                #get JSON data from Dark Sky App
+      wea_h_2 <- data.table(weather$hourly$data)  #store hourly forecasts
+      wea_list[[i]] <- wea_h_2                    #store four days' forecasts in the prepared list         
+      timezone <- weather$timezone                #store the location's timezone
+    }
+    wea_h <- bind_rows(wea_list)                   #combine four days hourly forecasts into one data frame
+  }
+  wea_time <- data.frame(unlist(as.POSIXct(wea_h$time, origin = "1970-01-01", tz = timezone))) #convert UNIX time back to date
+  names(wea_time) <- c("date")                      #name the new data frame
+  return(bind_cols(wea_time,wea_h))                #combine the data frame containing hourly forecasts and data frame containing normal date
+}
+```
+
+
+<br/>
+
+
+
+#### Task 2 - Prediction Locations (30 pts)
+
+Your second task is to scrap US city location information from the following Wikipedia page: https://en.wikipedia.org/wiki/List_of_United_States_cities_by_population. The entire table should be read into R via web scraping (think `rvest`).
+
+Your final data frame should meet the following requirements
+
+* Rows should be filtered to only contains cities with more than 500,000 residents during the 2010 Census
+
+* City and state names should be cleaned up 
+
+* Location should be split up into new numeric latitude and longitude columns. Note that western longitudes and southern latitudes should be negative.
+
+
+<hr/>
+
+In order to get US city information, my first step was to obtain and download the useful information from a Wikipedia page called "List of United States Cities by Population." Specifically, I used the tool “SelectorGadget” and R package rvest to parse the table contained name, population, location and some other raw information about US cities. I transformed the information I parsed from the website into a data frame and named each column. In order to clean up the data I downloaded from the webpage, I used regular expression to extract and match the information I wanted to store in my data frame. Since the location column included three types of latitudes and longitudes, I separated them and created new data frame to store my cleaned latitudes and longitudes information. Since I only cared about the name of city, the state the city in and city's Census, I selected these three columns from my original data frame and combined with the data frame containing latitude and longitude information. Finally, I got a data frame with five columns, which included the name of city, state, population, latitude and longitude of US cities that had more than 500,000 residents in 2010 Census. This smaller size dataframe(us_locs) would be used in the following task instead of the dataframe including all the cleaned information(us_locs_1).
+
+
+```{r}
+# Create your location data frame here
+library(rvest)                                     #necessary libraries
+library(stringr)
+library(tibble)
+page <- read_html("https://en.wikipedia.org/wiki/List_of_United_States_cities_by_population")
+#read wikipedia page containing US cities information
+locs <- page %>% html_nodes(xpath = '//*[@id="mw-content-text"]/table[4]') %>% html_table(fill = TRUE, header = TRUE) %>% as.data.frame()
+names(locs) <- c("2015_rank","city","state","2015_estima","Census","change","2014_land_area","2010_population_density","location")
+locs$city <- locs$city %>% str_replace_all("\\[\\d+\\]", "")
+#clean up the city name
+locs$`2015_estima` <- locs$`2015_estima` %>% str_replace_all("[^0-9]","") %>% as.numeric()
+#clean up 2015 estimated population for cities
+locs$Census <- locs$Census %>% str_replace_all("[^0-9]","") %>% as.numeric()
+#clean up the population information
+locs$change <- locs$change %>% str_extract("(\\+|\\−)\\d+\\.\\d+") %>% str_replace_all("−","-") %>% as.numeric()
+#clean up change of population
+locs$`2014_land_area`<- locs$`2014_land_area` %>% str_extract("\\d+\\.\\d+") %>% as.numeric()
+#clean up 2014 land area of each city
+locs$`2010_population_density` <- str_extract(locs$`2010_population_density`,"(\\♠\\d+\\,\\d+)|(\\♠\\d+)")
+locs$`2010_population_density`<- locs$`2010_population_density` %>% str_replace_all("(\\♠)|(\\,)","") %>% as.numeric()
+#clean up 2010 population density
+us_l <- sapply(str_split(locs$location, "/"), "[[", 3) %>% str_split(" ")
+# seperate three types of location information
+lat <- data.frame(matrix(unlist(sapply(str_split(sapply(us_l, "[[", 2), ";"), "[[", 1)), nrow = 304, byrow = T), stringsAsFactors=FALSE)
+# grab latitudes information from the second type location information and turn it into a data frame
+names(lat) <- c("lat")
+# name the new data fram containing latitudes information
+long <- data.frame(matrix(unlist(sapply(us_l, "[[", 3)), nrow = 304, byrow = T), stringsAsFactors=FALSE)
+# grab longitudes information from the second type location information and turn it into a data frame
+names(long) <- c("long")
+# name the new data fram containing longitudes information
+locs2 <- locs %>% select(city,state,Census)
+# select the information that will be used in following shinyApp from my data frame
+us_locs <- cbind(locs2, lat, long)
+#combine the lat data frame, long data frame and selected columns from original data frame
+us_locs$lat <- as.numeric(us_locs$lat)
+#clean up the latitudes 
+us_locs$long <- us_locs$long %>% str_replace_all("[^0-9.-]","") %>% as.numeric()
+#clean up the longitudes
+us_locs <- us_locs %>% filter(Census >= 500000)
+#filter the data frame that only contain the cities having more than 500,000 residents
+us_locs_1 <- cbind(locs, lat, long) %>% select(-location)
+#the data frame including all the clean up information from wikipedia webpage
+```
+
+
+<br/>
+ 
+#### Task 3 - Shiny Predictions (40 pts)
+
+Your third task is to create a shiny app to provide a GUI interface for the `get_darksky` function we wrote earlier.
+This app should allow the user to select a city from a list and provide a visualization of the hourly weather forecast for that location. 
+
+Your app should have the following features:
+
+* Your visualization should always include the temperature, but also allow the user to select a second quantity (e.g. precipitation chance, barometric pressure, etc.) to optionally display on the *same* plot - this must also include appropriate axes and legend.
+
+* The list of cities should come from the data frame your created in Task 2.
+
+* When a city is selected its latitude and longitude should also be reported in the user interface. 
+
+* UI should also allow the user to specify a historical date for the forecast
+
+* Extra credit for adding bells and whistles and overall polish / design of your app.
+
+
+<hr/>
+
+In this task, I wrote a shinyApp to allow users to select a city and a date to visualize the hourly weather forecasts. In the shinyApp, two parts were included to implement the apps from users' interactive part to server part. The first part was called ui, which was in charge of what would show on users' interfaces. On the left panel, users can input their own key to Dark Sky App, select a city from the list of cities that I got from task2 and also a date from a small calendar. If no key was taped in, the default setting was my own key. If users chose to not specify a date, the default setting was the current date. On the main panel, users were allowed to select more than ten hourly weather forecast quantities besides temperature to show their visualizations. The number of selectable quantities may be changed with different location and specified date. The output plots and location information of the selected city were shown under the select bar. The second part was called server, which implemented the inputs and outputs. According to different selected city and date, the server was able to output their latitudes, longitudes and hourly weather forecasts. Moreover, the server can turn two quantities in the data frame of forecasts into visualization, one was temperature and the other was the one users selected in the select bar called "More Quantities."
+
+
+```{r echo=FALSE}
+# Modify this default shiny app
+library(shiny)                                     #necessary libraries
+library(ggplot2)
+library(scales)
+city <- setNames(nm = us_locs$city)                 #get names from the US. cities data frame
+shinyApp(
+  ui = fluidPage(
+    titlePanel("Hyperlocal Weather Forecasts"),    #set name for the webpage
+    sidebarLayout(
+      sidebarPanel(
+        textInput("key", label = h3("Key"), value = "304e1cca63beb602f5ba37db436377ef"),
+        #create a text input blank to input key
+        selectInput("location", label = h4("City"), choices = city, selected = 1),
+        #create a select bar to select US cities
+        radioButtons("ordate","Specify a date?",choices=c("yes","no"),selected="no"),
+        dateInput("city_date", label = h4("Date"), value = Sys.Date()),
+        #create a date select calendar to select date
+        width = 3 
+        #set width of side panel
+      ),
+      mainPanel(
+        h3("Visualization:"),
+        #name the main panel
+        selectInput("second","More Quantities", choices = c("precipitation_probability", "wind_speed", "cloud_cover",  "barometric_pressure", "null"), selected = "null"),
+        #set a select bar to allow selecting a second quantity
+        plotOutput("distPlot"),
+        #plot temperature and a second quantity
+        fluidRow(column(6, verbatimTextOutput("value"))),
+        #output the latitude and longitude 
+        width = 8
+        #set width of main panel
+      )
+    )
+  ),
+  server = function(input, output, session) 
+  { 
+    city_location <- reactive({
+      city_lat <- us_locs[which(apply(us_locs, 1, function(x) x[1] == input$location)), 4]
+      #retrive latitude information accoring to location input
+      city_long <- us_locs[which(apply(us_locs, 1, function(x) x[1] == input$location)), 5]
+      #retrive longitude information accoring to location input
+      return(c(city_lat, city_long))
+    })
+    city_weather <- reactive({
+      if(input$ordate=="no"){
+        city_weather <- get_darksky(input$key, city_location()[1], city_location()[2]) 
+        #if not specified date is selected, return a data frame with two days forecasts
+      }else{
+        city_weather <- get_darksky(input$key, city_location()[1], city_location()[2], input$city_date) 
+        #if a specified date is selected, return a data frame with two days prior and two days following forecasts
+      }
+      return(city_weather)
+    })
+    more <- reactive({
+      col <- colnames(city_weather() %>% select(-c(date, time, summary, icon, temperature)))
+      if(any(which(col=="precipType"))==TRUE){
+        col <- col[-which(col == "precipType")]
+      }
+      #grab column names from columns containing numeric data in the above returned data frame
+      col_names <- c(col, "null")
+      #combine column names and "null" that means users only want to visualize temperature
+      return(col_names)
+    })
+    observe({
+      updateSelectInput(session, inputId = "second", choices = more(), selected = "null")
+      #update the choices in select bar with different location and date
+    })
+    output$value <- renderPrint({ city_location() })
+    #output the latitude and longitude information
+    output$distPlot <- renderPlot(
+      {
+        if(input$second == "null"){               #if users do not select a second quantity 
+          ggplot(data = city_weather(), aes(x = date, y = temperature)) + #plot temperature by hour
+            geom_point() +                        #plot points
+            geom_line() +                         #connect points by line
+            labs(x="Date",y="Temperature") +      #set up x-axis and y-axis labels
+            scale_x_datetime(labels = date_format("%y/%m/%d %H:%M"), breaks = pretty_breaks(n=50)) + 
+            #reset the x-axis labels to be year-month-day format
+            theme(axis.text.x = element_text(angle=90,hjust=1)) #change the angle of x-axis labels
+        }else{                                    #if users select a second quantity 
+          new <- city_weather() %>% select(date,temperature) %>% cbind(city_weather()[,paste(input$second)])
+          #select date and temperature from the above reactive function and combine with the selected quantity
+          names(new) <- c("date","temperature",paste(input$second)) #set up column names for the new data frame
+          new2 <- melt(new, id.var="date")        #covert the data frame to a format that can be read by ggplot
+          ggplot(new2, aes(x = date, y = value)) + #plot new generated variable called "value" against date
+            geom_point() +                        #plot points
+            geom_line(aes(color = variable)) +   #connect points by different color lines
+            facet_grid(variable ~ ., scales = "free_y") + 
+            #plot temperature and selected quantity in two different plots 
+            theme(legend.position = "none")+     #do not put any legend
+            scale_x_datetime(labels = date_format("%y/%m/%d %H:%M"), breaks=pretty_breaks(n=50)) +
+            #reset the x-axis labels to be year-month-day format
+            theme(axis.text.x = element_text(angle=90,hjust=1)) #change the angle of x-axis labels
+        }
+      })
+  }
+)
+
+```
