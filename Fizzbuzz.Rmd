@@ -1,0 +1,88 @@
+Fizzbuzz
+========================================================
+
+### Task 1 - Implementation
+
+<!--
+Use this section to implement the fizzbuzz function.
+
+This should include a short write up describing your approach
+to implementing the function. Note that both code formating / style
+and your writeup matter for your overall grade.
+-->
+
+```{r}
+fizzbuzz = function(x){
+  for(i in seq_along(x))
+  {
+    test = x[i]
+    if (is.null(test)==TRUE){                                       #test input as NULL
+      print ("No Input")
+    }
+    else if(is.numeric(test) == TRUE){                              #numeric                
+      if(is.infinite(test)==TRUE){                             #test infinite 
+        print("Please enter a finite number")
+      }
+      else if(is.na(test)==TRUE){                              #test missing value
+        print("Missing Values")
+      }
+      else if(round(test)!=test){                              #test non-integer value
+        print("Please enter an integer")
+      }
+      else if (test %% 3 == 0 & test %% 5 == 0){               #test multiple of three and five
+        print("FizzBuzz")
+      } 
+      else if (test %% 3 == 0){                                #test multiple of three 
+        print("Fizz")
+      }
+      else if (test %% 5 == 0){                                #test multiple of five
+        print("Buzz")
+      }
+      else{
+        print(test)
+      }
+    }
+    
+    else if(is.logical(test)==TRUE){
+      if(is.na(test==TRUE)){                                  #logical NA
+        print("Missing Values") 
+      }
+      else{
+        print("No logical constant. Please enter a number")
+      }
+    }
+    else if(is.character(test)==TRUE){
+      print("No character. Please enter a number")
+    }
+    else{
+      print("Wrong Input")
+    }
+  }    
+}
+
+```
+
+### Task 2 - Validation
+
+<!--
+Use this section to show the output of your 
+fizzbuzz function for various inputs
+
+No writeup is necessary for this section.
+-->
+
+```{r}
+fizzbuzz(1)
+fizzbuzz(3)
+fizzbuzz(5)
+fizzbuzz(15)
+fizzbuzz(9:15)
+fizzbuzz(15:9)
+fizzbuzz(Inf)
+fizzbuzz("A")
+fizzbuzz(1.5)
+fizzbuzz(NA)                             #logical NA
+fizzbuzz(c(3,4,5,NA,15))                 #numeric NA
+fizzbuzz(TRUE)
+```
+
