@@ -1,0 +1,130 @@
+---
+title: "F1- JSON"
+output: rmarkdown::html_document
+---
+
+
+### Data
+
+For this assignment you will be working with a data from the 2015 Formula 1 season. The data was downloaded from ergast.com in the form of a single large JSON file which contains information on the results of all 19 races from the 2015 season. Your repo should contain both a prettified version of the original json file (`f1.json`) as well as an Rdata binary file (`f1.Rdata`) which can be read in using
+
+```{r}
+load(file="f1.Rdata")
+```
+
+The data is structured as a list of lists of lists of lists and so on, it is up to you to look at the data and figure out how it is structured and how best to get at the information you want. There is no need to create a tidy data frame of the entire data set, you are free to manipulate and encode the data in anyway you see fit.
+
+<br/>
+
+
+### Task 1
+
+Briefly describe the structure of the `f1` object, in particular you should address what information is contained in each level of the list of lists as well as comment on any interesting or unusual features of these data.
+
+The f1 data consists of a list called MRData, which introduces the general information about 2015 Formula 1 race, such as its XML namespace, series, url, limit, offset, total and race table. The race table includes two lists: one is season and the other is Races that includes all the detailed information about this f1 race. The list called Races consists of 19 lists and each of them represents a circuit, which consists of 8 lists and introduces the season, round, url, race name, circuit, date, time and results. The most important two lists among Races are circuit and results. Circuit involves 4 lists, which shows the circuit ID, url, circuit name and location of this circuit race. The finishing location is defined by its latitude, longitude, locality and country. The results comprises the information of each driver and his performance, such as number, position, points, personal information, constructor, grid, laps, status, time and fastest lap. 
+
+The data is structured as a list of lists of lists, which increases the difficulty of grabbing information from the data. Moreover, none of drivers participated in all the races in 2015 season. Also, the drivers’ number in each circuit may be different from their permanent number. What's more, the drivers with status "Finished" does not equal to all the drivers who complete the race. Similarly, the position text does not only include integer but also includes some alphabets.  
+
+### Task 2
+
+Using these data construct a table showing the World Drivers' Championship standings for this F1 season. This table should resemble the results available on Wikipedia https://en.wikipedia.org/wiki/2015_Formula_One_season#World_Drivers.27_Championship_standings. Your data frame should also have the same 21 columns, Driver name, finishing position for all 19 races and then their overall points total for the season. Failure to finish for any reason (did not start, did not finish, disqualified, etc.) should be coded as an `NA`. Race finishes and points total should all have an integer type. Your data frame should be sorted by points total, but you do not need to include any additional logic to handle ties.
+
+In order to construct a table showing 2015 World Drivers' Championship standings, I first grab the useful information from the f1 lists, such as drivers' given names, family names, constructors' names and location of each circuit. Then I create an empty matrix with 21 columns and 22 rows that equals to the number of drivers participating in this f1 season. Finally, I run two nested loops to fill position in the matrix and count up the points for each driver. Since the drivers may fail to finish the race, I conduct a check in the loops to set the unfinished race positions as NA. For the convenience of visualizing table, I arrange the matrix by order of drivers' total points.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+col_names = c() #create a list for column names
+driver=c() #create a list for drivers' names
+constructor = c() #create a list for constructors' names
+race = f1$MRData$RaceTable$Races #shorten the name
+for(i in seq_along(race)){ #run a loop in each race
+  for(j in seq_along(race[[i]]$Results)){ #run a loop in each result of the race
+    racer_given_name = race[[i]]$Results[[j]]$Driver$givenName #get drivers' given names
+    racer_family_name = race[[i]]$Results[[j]]$Driver$familyName #get drivers' family names
+    driver = c(driver,paste(racer_given_name,racer_family_name)) #store the drivers' names
+    constructor_name = race[[i]]$Results[[j]]$Constructor$name #get the constructors' names
+    constructor = c(constructor, constructor_name) #store the constructors' names
+  }
+  race_round = race[[i]]$Circuit$Location$country #get the location of each circuit
+  col_names = union(col_names, race_round) #store the locations
+}
+
+driver_s = matrix(NA, nrow = length(unique(driver)), ncol= 21) %>%tbl_df() #create a matrix for drivers' championship standing 
+colnames(driver_s) = c("Driver", col_names, "Points") #set up column names of the matrix
+driver_u = unique(driver) #unique drivers' name
+driver_s[,1] = driver_u #set up the first column in matrix
+driver_s[,21]=0 #set zeros in the last column for points
+
+for(i in seq_along(race)){
+  for(j in seq_along(race[[i]]$Results)){
+    racer_given_name = race[[i]]$Results[[j]]$Driver$givenName #get drivers' given names
+    racer_family_name = race[[i]]$Results[[j]]$Driver$familyName #get drivers' family names
+    y = paste(racer_given_name,racer_family_name) #store current driver name
+    points = as.numeric(race[[i]]$Results[[j]]$points) #get points from each race
+    position = race[[i]]$Results[[j]]$positionText #get positiontext from each race
+    race_round = race[[i]]$Circuit$Location$country #get the location of each circuit
+    if(race[[i]]$Results[[j]]$positionText %in% c("R","W","E")){ #eliminate unfinished race result from the matrix
+      driver_s[which(driver_u==y),i+1] = NA #set unfinished race results as NA
+      driver_s[which(driver_u==y),21] =  as.numeric(driver_s[which(driver_u==y),21])+points #count up the points in each circuit
+    }else{
+      driver_s[which(driver_u==y),i+1] = position #put position information in the matrix 
+      driver_s[which(driver_u==y),21] =  as.numeric(driver_s[which(driver_u==y),21])+points #count up the points in each circuit
+    }
+  }
+}
+driver_s = driver_s %>% arrange(desc(Points)) #let the drivers ordered by their total points
+```
+
+
+### Task 3
+
+Using these data construct a table showing the World Constructors' Championship standings for this F1 season (https://en.wikipedia.org/wiki/2015_Formula_One_season#World_Constructors.27_Championship_standings). Your data frame does not need to report the individual race results this time only the team's name and their overall points total (only two columns).
+
+In order to construct a table showing 2015 World Constructors' Championship standings, I first create an empty matrix with 2 columns and 10 rows that equals to the number of constructors participating in this f1 season. Then, I run two nested loops to count up the points for each constructor. Finally, I arrange the matrix from constructor with highest points to the constructor with lowest points. 
+
+```{r}
+constructor_s = matrix(NA, nrow = length(unique(constructor)), ncol= 2) %>%tbl_df() #create a matrix for constructors' championship standing 
+colnames(constructor_s) = c("Constructor", "Points") #set up column names of the matrix
+constructor_u = unique(constructor) #unique constructors' name
+constructor_s[,1] = constructor_u #set up the first column in matrix
+constructor_s[,2]=0 #set zeros in the second column for points
+
+for(i in seq_along(race)){  #run a loop in each race
+  for(j in seq_along(race[[i]]$Results)){ #run a loop in each result of the race
+    constructor_name = race[[i]]$Results[[j]]$Constructor$name #get constructors' names
+    constructor = c(constructor, constructor_name) #store constructors' names in a list
+    points = as.numeric(race[[i]]$Results[[j]]$points) #get points from each race
+    constructor_s[which(constructor_u==constructor_name),2] =  as.numeric(constructor_s[which(constructor_u==constructor_name),2])+points #count up points for each constructor in the matrix
+  }
+}
+constructor_s = constructor_s %>% arrange(desc(Points)) #let the constructors ordered by their total points
+```
+
+### Task 4
+
+Create a visualization comparing the 10 teams that shows their *cumulative* points earned throughout the 2015 season. This plot should have cumulative points on the y-axis and race on the x-axis with team/constructor identified by color or some other aesthetic. 
+
+In order to show cumulative points earned throughout 2015 season for each constructor, I first create an empty matrix with 4 columns and 378 rows that equals to the total number of 2015 season f1 participations. Then, I run two nested loops to store constructors' names, location, date and points for each driver in each circuit. In order to get the cumulative points for each constructor, I add a new column to my origin matrix, which shows the cumulative points of constructors throughout 2015 season. For visualization of cumulative plot, I reorder the constructors' names by their total points and set the location name vertically. 
+
+```{r}
+constructor_p = matrix(0, nrow = length(constructor_name), ncol= 4) %>%tbl_df() #create a matrix for constructors'2015 season cumulative points
+colnames(constructor_p) = c("Constructor","Location","Points","Date") #set up column names of the matrix
+k=0 #create an index
+for(i in seq_along(race)){ #run a loop in each race
+  for(j in seq_along(race[[i]]$Results)){ #run a loop in each result of the race
+    k = k+1 #update index
+    points = as.numeric(race[[i]]$Results[[j]]$points) #get points from each race
+    constructor_name = race[[i]]$Results[[j]]$Constructor$name #get constructors' names
+    race_round = race[[i]]$Circuit$Location$country #get the location of each circuit
+    date = race[[i]]$date #get the date of each circuit
+    constructor_p[k,] = c(constructor_name,race_round,points,date) #put the information of constructor, location and their points in each row
+  }
+}
+constructor_p$Points=as.numeric(constructor_p$Points) #change type of points
+constructor_p2=constructor_p %>% group_by(Constructor,Location,Date) %>% summarize(numb=sum(Points)) #sum the points for each constructor in each round
+constructor_p3=constructor_p2 %>% group_by(Constructor,Date) %>% arrange(Date) %>% group_by(Constructor) %>% mutate(cumsum = cumsum(numb)) #create a new column to contain the cumulative points for each constrcutor
+constructor_p3$Constructor = ordered(constructor_p3$Constructor, levels = constructor_s$Constructor) # let the constructor ordered by their total points and prepare for the legend of plot
+constructor_p3$Location = ordered(constructor_p3$Location, levels = col_names) # let the finishing location ordered by their race date
+ggplot(data = constructor_p3, aes(x=Location, y=cumsum, group = Constructor, color = Constructor)) + geom_point() + geom_line() + theme(axis.text.x = element_text(angle=90, hjust = 1)) + ggtitle("Cumulative Points for Different Constructors in 2015 Season") #plot the cumulative points for each constructor with different colors
+```

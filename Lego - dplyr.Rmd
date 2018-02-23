@@ -1,0 +1,215 @@
+---
+title: "Lego-dplyr"
+author: "Muyao Sun"
+output:
+  html_document: default
+  pdf_document: default
+---
+========================================================
+
+### Task 0 - Load the data
+
+```{r}
+suppressMessages(library(dplyr))
+load("lego_sales.RData")
+```
+
+
+### Task 1 - Tidying the data
+
+<!-- Covert the `sales` object into a tidy data frame. Be sure to include a write up of your methods. -->
+The purpose of this part was transforming lists in original data into a tidy data frame. According to the structure of original data, we decided to create two dataframes, one including consumers' personal information and the other including their purchasing history, and then combine the two dataframes into a complete dataframe.
+
+In order to combine the two dataframes later, we should guarantee that they had same number of rows. For the first dataframe, we wrote two nested loops, the outer loop iterating from the first consumer to the last consumer and the inner loop iterating from the first item purchased to the last item purchased in each shopping. The number of total iteration is 620. After checking the types of each column, we got a dataframe that included consumers' gender, first name, last name, age, phone number and hobbies, called df.  
+
+Having completed the first dataframe, we created a same number of rows dataframe and conducted same nested loops to organize purchase information of consumers. The second dataframe stored the information of consumers' each purchase, such as setID, number, theme, subtheme, year, name, pieces, USprice, imageURL and quantity, called df2.
+
+Finally, we combined the two dataframes and let the personal information of each consumer match their purchasing history. We renamed the dataframe as hot.
+
+```{r}
+col_names = c()                             #create a list for column names in sales
+n_purchase = 0                              #initialize the number of rows with 0
+for(i in seq_along(sales))                  #get information from the original data
+{
+  sale = sales[[i]]
+  col_names = union(col_names, names(sale))
+  n_purchase = n_purchase + length(sale$purchases)
+}
+col_names = setdiff(col_names, "purchases") #eliminate purchase from the column names
+
+h = col_names                               #shortern the variable
+df = matrix(NA, nrow = n_purchase, ncol= length(col_names)) %>%
+       data.frame() %>%
+       tbl_df() %>% 
+       setNames(col_names)                  #create a dataframe for consumers' personal information
+
+df$hobbies = as.list(df$hobbies)            #content in the column of hobbies shows in list
+
+
+quantity = rep(0, length(sales))            #the number of purchases each sales record has
+for (i in seq_along(sales)){
+  quantity[i] = length(sales[[i]]$purchases)
+}
+
+
+                                            #put data into new data frame
+sum = 0                                     #initialize the number of rows with 0
+for (i in seq_along(sales)){                #create a for loop to iterate the consumers
+  for(j in 1:quantity[i]){                  #create a for loop to iterate the purchase each sales record has
+    sum = sum(quantity[1:i])-quantity[i]+j  #create index
+     if( identical(sales[[i]]$hobbies, character(0)) == TRUE){
+      df$hobbies[[sum]] = NA            
+    }
+    else{
+    df$hobbies[[sum]] = sales[[i]]$hobbies
+    }                                       #change null in hobbies column into NA
+    
+    for (k in 1:(length(h)-1)){             #create a for loop to iterate each variable in sales
+      if(length(df[[h[k]]][sum])!= length(sales[[i]][[h[k]]])){
+      df[[h[k]]][sum] = NA                  #replace empty with NA
+      }
+      else{
+      df[[h[k]]][sum] = sales[[i]][[h[k]]]  #store personal information in dataframe
+      }
+    }
+  }
+}
+
+
+col_names2 = c()                           #create a list for column names in sales
+for(i in seq_along(sales)){                #get information from the original data
+  sale = sales[[i]]
+  for(j in seq_along(sale$purchases)){
+    col_names2 = union(col_names2, names(sale$purchases[[j]]) )
+  }
+}
+h2 = col_names2                           #shorten the varible
+df2 = matrix(NA, nrow = n_purchase, ncol= length(h2)) %>%
+       data.frame() %>%
+       tbl_df() %>% 
+       setNames(h2)                       #create a dataframe for consumers' purchasing history
+
+sum = 0                                   #initialize index with 0
+for (i in seq_along(sales)){              #create a for loop to iterate the consumers
+  for(j in seq_along(sales[[i]]$purchases)){ #create a for loop to iterate the purchase each sales record has
+    for (k in seq_along(h2)){             #create a for loop to iterate each variable in purchase
+      sum = sum(quantity[1:i])-quantity[i]+j #compute index
+      df2[[h2[k]]][sum] = sales[[i]]$purchases[[j]][[h2[k]]] #store purchase information in dataframe
+    }
+  }
+}
+
+hot <- cbind(df, df2)                     #combine two dataframes
+
+```
+
+<br/>
+
+## Task 2 - Processing the data
+
+
+
+1. What was the most common first name of purchasers? Last name?
+
+Since one person may have many purchase records, we group data by every purchaser. Then we retrieve their first and last name seperately and get the most common ones.
+```{r}
+uniq_infor =unique(hot[,1:6])  #retrieve unique information from first six columns 
+first_name = head(sort(table(uniq_infor$first_name),decreasing=TRUE),5) #find first name appearing the most time
+first_name      
+names(first_name[1:2]) #only show first names
+last_name =head(sort(table(uniq_infor$last_name),decreasing=TRUE),5) #find last name appeared the most time.
+last_name
+names(last_name[1:4]) #only show last names
+```
+
+The most common first name are `Jacob` and `Michael` which are both appeared four times . The most common last name are `Brown`, `Scott`, `Smith` and `Williams` which are appeared three times. 
+
+
+
+2. What are the five most popular lego sets based on these data?
+
+We group data by lego sets, calculate their total quantity, sort them, and get the first 5 with largest quantity.
+```{r}
+Lego_popu=hot %>% 
+  group_by(Name) %>%            #group by lego sets name
+  summarise(numb=sum(Quantity)) %>% #calculate total quantity
+  arrange(desc(numb))           #sets quantity order by descending
+head(Lego_popu,5)           #present order
+```
+`Campsite Scrapbook` , `Ninjago Party Set`,`Arctic`, `Daisy's Beauty Salon`, and `Finn` are the most five popular lego sets.
+
+3. Which five customers have spent the most money so far and how much have they spent?
+
+We group data by individual names, caculate individual payment, and find the first 5 individuals with highest payment.
+```{r}
+head(hot %>% group_by(first_name,last_name)    #group data by individual
+     %>% summarise(x=sum(Quantity*USPrice))    #caculate individual payment
+     %>% ungroup()%>%arrange(desc(x)),5)       #find the first 5 individuals with highest payment 
+```
+`Jennifer Dana` spent `719.96	`; `Cody Gonzales` spent `379.96	`;`Celia Foley` spent `379.92	` , `Kaitlyn Degeer` spent `372.94` and `Cecilia Mauro` spent `359.97	`.They are the five custoemers that have spent the most money so for. 
+
+4. Which lego theme has made the most money for lego?
+
+We group data by lego theme, caculate the money earned by each theme, sort data, and get the most profitable  theme.
+```{r}
+head(hot %>% group_by(Theme)                      #group data by lego theme
+     %>% summarise(x=sum(Quantity*USPrice))       #caculate the money each theme has made
+     %>% ungroup() %>% arrange(desc(x)),1)        #find the most profitable theme
+```
+`Star Wars` is the most profitable lego theme and its profit is 4447.83. 
+
+5. Do men or women buy more lego sets (per person) on average?
+
+We firstly create a table containing each individual's payment.Then group the table by gender and caculate the mean of each gender.
+```{r}
+Qun_table = hot %>% group_by(gender,first_name,last_name) %>% summarise(x=sum(Quantity))
+#caculate individual payment
+Qun_table %>% group_by(gender) %>% summarise(mean(x))     #group individual payment by gender, calculate the mean
+```
+From the result, we can see `women` buy more lego sets on average. Female buy `3.569231` sets and male buy `3.558333	` sets. 
+
+6. What are the five most popular hobbies of lego purchasers?
+By unlisting hobbies and gettiing unique information of hobbies, we sort this information and present the five most popular ones. 
+```{r}
+head(sort(table(unlist(uniq_infor$hobbies)),decreasing = TRUE),13)  #uniq_infor$hobbies: hobbies different people have; unlist: collect the hobbies different people have; head,sort,table:find the first 5 hobbiies with highest frequency
+```
+The five most popular hobbies of lego pucharsers are `Animal fancy`, `Skateboarding`, `Kitesurfing`, `Sculling or Rowing` and `Bodybuilding`. The fifth popular hobbies has eight parallel hobbies, so we decide to choose one randomly.
+
+7. How many total pieces have been purchased from lego by these customers?
+Firstly, we caculate the number of pieces for each record by mutiplying quantity and pieces. Then we sum the number of pieces to generate the total pieces purchased.
+```{r}
+total.piec = hot$Pieces * hot$Quantity          #caculate the number of pieces each record/row has             
+sum(total.piec,na.rm=TRUE)                      #caculate the sum
+```
+`202351` pieces have been purchased from lego by their customers. 
+
+8. What state has spent the most money on legos? Hint - customer area codes may prove useful for this.
+Using the csv file of areacodes for reference, we filter phone_number by their first three integers and create a new column called total_money. Secondly, we create a vetor call state_code with NA_character originally. Thridly, checking whether the value in phone_number is NA. If value is not NA, we would compare this value to the areacode. Finding the correct state name and store this name as state_code for the state record. Fourthly, we would combine state_code and total_money and omiting the NA rows. Finally, using group_by function to find spending of each state and sort the result in decreasing order as well as showing the first result. 
+```{r}
+#read the data of areacodes
+code.reference = read.csv("areacodes.csv", header=TRUE)   
+#caculate the total money by multiplying the corresponding price and quantity
+total_money = hot$USPrice * hot$Quantity              
+#choose the first three characters of the string the set them as numeric data
+hot$phone_number = as.numeric(substr(hot$phone_number,1,3))    
+#attach the new column "total_money" to the data.frame "hot" 
+newdata1 <- cbind(hot,total_money)        
+#creat a vector called state_code with NA_character entries 
+state_code=rep(NA_character_,dim(newdata1)[1])  
+#first check whether the value in phone_number[i] is NA. If it is not NA, then compares it to the Areacode. #Finding the matched areacode and assigning the corresponding state name to the state_code[i].
+for (i in 1:dim(newdata1)[1]){
+  for(j in 1:dim(code.reference)[1]){
+    if(!is.na(newdata1$phone_number[i]))
+      if (newdata1$phone_number[i] == code.reference$Area.Code[j]){
+         state_code[i] = as.character(code.reference$Region[j])
+      }
+  }
+}
+#combining the total_money and state_code, then omitting the row which contains NA
+newdata2 <- na.omit(as.data.frame(cbind(total_money,state_code), stringsAsFactors = FALSE))
+#setting the "total_money" column as numeric type
+newdata2$total_money = as.numeric(newdata2$total_money)
+#using the group_by method to find the spending of each state on buying Lego set, and showing it as #decreasing order. Then use head function to pick the fisrt one.
+head(newdata2 %>% group_by(state_code) %>% summarise(x = sum(total_money)) %>% arrange(desc(x)),1)
+```
+From the result, we can see the state `Taxes` has spent the most money on legos, and the total money is `3042.22`. 

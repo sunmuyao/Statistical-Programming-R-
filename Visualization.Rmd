@@ -1,0 +1,130 @@
+---
+title: "Visualization - ggplot2"
+author:
+- Muyao Sun
+output: 
+  html_document: 
+    highlight: pygments
+    theme: flatly
+---
+
+### Load the data
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+data(diamonds)
+attach(diamonds)
+```
+
+### Data properties
+
+<!-- As a team, browse the data and select three variables that you think are interesting and that you think may have an interesting relationship. 
+
+For each of the variables you selected answer the following question: What are some of the properties of this variable that will be relevant (useful? problematic?) for data visualization? -->
+
+1. Variable 1 - 
+
+```{r}
+#price. price in US dollars 
+price = diamonds$price
+
+```
+Among all the variables, price looks like the response variable that all other variables are taking the weight on it. Since price represents market value of a diamond, and all of the rest variables will influence this value to some extent. Therefore, we will choose price as our starting variable for the analysis. 
+
+2. Variable 2 - 
+
+```{r}
+#carat. weight of the diamond
+carat = diamonds$carat
+summary(carat)
+cor(price, carat)
+```
+Carat is the weight of the diamond ranging from 0.2 ~ 5.01. By running the correlation test, we find that the correlation between price and carat is 0.92, which indicating carat is highly related to the market price. From visualization, we could catch the relationship between price and carat directly. 
+
+3. Variable 3 - 
+
+```{r}
+#clarity. a measurement of how clear the diamond is (I1 (worst), SI1, SI2, VS1, VS2, VVS1, VVS2, IF (best))
+clarity = diamonds$clarity
+summary(clarity)
+
+```
+Clarity is a categorical variable, which describes how clear the diamond is. It includes eight categories from I1 (worst), SI1, SI2, VS1, VS2, VVS1, VVS2 to IF. We would expect that there is relationship between price and clarity. Therefore, we would like to represent price and carat by each clarity category. From visualization, the relationship can be directly achieved. 
+
+### Charts
+
+<!-- Select and design two different charts that visualize the relationship between these three variables. Each chart should have different "purpose" that guides your choices and justifies the differences between the charts. -->
+
+
+#### Chart 1
+
+```{r}
+#Plot carat and price with clarity group by using diamonds data
+ggplot( data=diamonds, aes(carat, price, colour=clarity)) + 
+  # Set size of points and avoid overplotting
+  geom_jitter(width = 0.1, height = 0.1) +       
+  #Set the color of points and reverse the order of legend
+  scale_color_brewer(type = "div", guide = 
+                       guide_legend(reverse=T, override.aes = list(alpha = 1))) +   
+  theme_bw() +                                       #Set theme of plot
+  ggtitle("Price by Carat and Clarity") +            #Create a title for the plot
+  geom_smooth(se =FALSE)                #Adding the smoothing curve for the general trend of data
+```
+
+#### Chart 2
+```{r}
+#Create a dataframe only including clarity, carat and price three variables
+df <- diamonds %>% select(clarity,carat,price)   
+carat <- diamonds$carat                           #Shorten a name of variable
+
+weight <- NULL                                    #Create a vector for weight
+q <- quantile(carat)                              #Group data bt weight
+for (i in 1:length(carat)){
+  for (j in 1:4){
+    if(carat[i]>=q[j] & carat[i]<q[j+1]){
+      weight[i] = j
+    }
+  }
+}
+
+df <- cbind(df,weight)              # combine weight value into the original df dataframe
+ggplot(na.omit(df), aes(y = (price/carat), x = clarity, colour = clarity)) +
+  ggtitle("Unit Price by Carat and Clarity")+   # adding title for the plot
+  geom_boxplot()+ 
+  scale_color_brewer(type = "div", guide = 
+                       guide_legend(reverse=T, override.aes = list(alpha = 1))) +
+   facet_wrap(~weight)              # plot boxplot regarding each weight group 
+
+```
+
+### Chart properties
+
+<!-- What two chart types have you selected? What are some of the properties of these charts, and how do those properties match with your variables of interest? -->
+We choose `scatterpot` for Chart1 and `boxplot` for Chart2.
+
+The Chart 1 depicts relationships of diamonds price to diamond clarity and carat weight. The x-axis denotes the weight of diamonds, the y-axis denotes the price of diamonds, and the eight different color points represent the different clarity of diamonds. Also, there are eight smoothing curves corresponding to different group of color points showing the general trend of the each group's data. 
+From the plot, we can roughly see that diamond price has positive relationships to both effects: carat and clarity. The strong positive relationship between carat and price is clear since the more weight diamonds have, roughly the higher price of diamonds are on the graph. However, the positive relationship of clarity and price is not that clear. Although the smoothing curves which denote high clarity are steeper than the curves denoting low clarity, there are some overlapping of these curves on the graph that need further analysis. We may neglect the effect of weight in this chart; therefore, we will do more specific analysis concentrarting on the relationship between diamond price and clarity on Chart 2.
+
+In Chart 2, we choose box plot to further explore how clarity influence diamond price. The x-axis denotes the clarity of diamonds (eight different color points represent the different clarity of diamonds), the y-axis denotes the unit price of diamonds (price per carat). Recall from Chart 1, the price and the weight of diamond are strong positive related. We are tring to grouping diamonds by their weights so that we can see the direct relationship between price and clarity. Thus, we categorize data according to its weight quantile, presenting in four facets. The Chart 2 clearly shows that when weight is fixed, the clarity has a positive impact on diamonds’ unit price (price per carat). Especially for the IF type diamonds, most of its first weight quantile diamonds’ unit prices are under 5000, while most of its fourth weight quantile diamonds’ unit prices are above 7500. For clarity, each facet of the Chart 2 suggests that while having the same weights, the clearer diamond are, the higher price they have.
+
+### Tasks
+
+<!-- What task(s) should users of each chart be able to undertake? Why are these tasks important for these variables? -->
+From chart 1, the users could obtain the relationship between price and carat regarding individual group of clarity. In this plot, the color scale differentiates observations in terms of their clarity. The smooth trends imply the price changes respect to carat weight within different clarity categories. Therefore, we can visually obtain the information about price combining two features. 
+
+From chart 2, the users could obtain the median values of each clarity category regarding four quantile carat intervals. The users should be able to tell the general relationship between price and carat and how clarity influences the price when carat is break into four quantiles For example, it is most obvious that in the largest carat weight interval, the better the clarity is, the higher the price is. This visualization is important for understanding price regarding to the features of carat and clarity. 
+
+### Design context
+
+<!-- What design choices did you make to try to help users accomplish the intended tasks? -->
+
+In Chart1, we used divergent color scale to show different growth trend of price among different clarity group as diamond weight (carat) increases. In order to give a clear trend of future price, we added a trend line with shade to forecast the future price range. Moreover, we used a reserve legend of clarity group, which made the best clarity group IF pump to consumers’ eyes first. In Chart2, we created a boxplot between clarity and price with diamond weight denoted separately in four charts, which made the positive correlation between price and clarity clearer. We also used different color on boxplot among different clarity group to make them more separable. 
+
+
+### User skills
+
+<!-- What type of audience did you intend the chart for? What types of skills does this audience bring to the understanding of your charts? What elements of your charts might be difficult for the audience to understand, and how do you justify the choices you have made about those elements? -->
+
+The charts were designed for diamonds consumers, targeting on both consumers with high budget and low budget. The audience should have experience on reading scatter plot and boxplot and understand the relationship and quantiles showed in charts. Although understanding quantiles may be a little difficult for the consumers without basic statistical knowledge, we still decided to use the quantiles of diamond weight (carat) to divide diamonds into four groups because the increase trend of price with higher level of clarity in different weight group became much clearer. We can give consumers an introduction to quantiles and make them better understanding the purpose of our charts.
+ 
