@@ -1,0 +1,85 @@
+---
+title: "Dennys and La Quinta - Web Scraping"
+author: "Muyao Sun"
+date: "10/12/2016"
+output: html_document
+---
+
+###Task 1 – Scraping La Quinta
+
+get_lq
+
+In order to get each La Quinta’s information, our first step was to obtain and download every La Quinta hotel’s HTML data. Specifically, we used the tool “SelectorGadget” and R package rvest to select each La Quinta’s webpage link from La Quinta's hotel listings page, which was relative address. Then, we created a directory, and used the absolute address to download each La Quinta hotel’s HTML file. We noticed duplication in La Quinta's hotel listings page, therefore function unique( ) was applied to avoid duplicated records.
+
+parse_lq
+
+First, we retrieve full paths of all files in `lq` folder and save them to `files`, and create an empty list called `res`. From the get_lq, we know there are 902 websites of hotel stored in `lq` folder. Then, we use a for loop to iterate over each of hotel website, and in each iteration collect 10 features of the hotel: `location_name` saving the name of each hotel, `address` saving the address of each hotel, `phone` saving the telephone number of each hotel, `fax` saving the fax number of each hotel, `n_rooms` saving the number of rooms of each hotel, `swimming_pool` showing whether does hotel have swimming pools, `internet` showing whether does hotel provide internet connection, `floors` saving the number of floors of each hotel,  `lat` saving the latitude of each hotel and `long` saving the longitude of each hotel. All these 10 features are saved into empty list `res` during each iteration, and at the end of each iteration, we define `res` as a dataframe which contains 10 columns and each column corresponds to one feature of hotel. Since we only need to colloct la quinta hotels in the U.S, we write two tests to remove la quinta hotels in other countries. First, we use the regular expression for US and Cananian telephone number to remove la qunita hotels which are not in these two countries. Second, we use the regular expression for US zipcode to remove la qunita hotels in Canada. Next, we bind all of the dataframes `res` which contain information about each la quinta hotel by row. Finally, we save the dataframe for la quinta hotels as `lq.Rdata` in `data` folder
+
+###Task2 – Scraping Denny’s
+
+get_dennys
+
+As mentioned, the Denny’s site uses 3rd party service to display its locations. After identifying some specific parts (limit,zip_code,radius) of its API, noticing that up to 1000 Denny’s could be found at a time, and googling the total number of Denny’s, we chose LA (zip code: 90210), Hawaii(zip code: 96701), Utah (zip code: 84101) and Washington (zip code: 20001) as anchorages/centers, set radius equal to 5000 miles to cover all Denny’s in US, and recorded their URLs. Then, we created a directory, and used the above URLs (absolute address) to download our four centers’ XML files, which covered all the location information of each Denny’s.
+
+parse_dennys
+
+First, we retrieve our datafile called `de.files` from the data folder that get_dennys saved four xml files and create a empty list called `dennys`. In each of this file, we have 1000 Dennys around the center location within 5000 miles. Second, we would iterate over each of the data file. In each iteration, we would record location name, address, zip code, city, state, country, latitude, longitude and phone number for all of 1000 restaurant Third, we would create a temporary list called `res`, making each restaurant's information as a dataframe stored in `res`. Then we would union `dennys` and `res` to retrieve the unique information about Denny's. Fourth, after complete all iterations, we would bind all of the dataframes which contain information about each Denny's restaurant by rows. Finally, we would filter out the dennys only in the US called `dennys.US`, which will be used for our task 3 analysis. 
+
+
+###Task3 – Distance Analysis
+
+
+Since the Spanish meaning of La Quinta is “next to Denny’s,” we use each La Quinta as center and then find out if a  Denny’s exists in 1-mile range. In order to calculate the distance between La Quinta and Denny’s, we first load the location information of La Quinta and Denny’s. We create a loop to generate the pairwise distances between one La Quinta and all Denny’s given their longitude and latitude. The formula used in the loop is haversine formula (Reference: https://en.wikipedia.org/wiki/Haversine_formula). If the minimum distance between a La Quinta and a Denny’s is less than 1 mile, we will count it. Finally, we calculate the rate that one Denny’s exists in 1-mile range of one La Quinta.
+
+For visualization, we generate two plots: one scatter plot and one histogram. The scatter plot presents the cumulative distribution of the number of Denny’s nearing La Quinta with respect to different radius: the x-axis represents the range of radius from 0.1 to 1 mile, increasing by 0.1; the y-axis represents the rate of the number of Denny’s near La Quinta within that radius. This plot shows that as radius increases the slope of cumulative distribution curve is decreasing, suggesting diminishing marginal rate: increasing radius by o.1 mile will not significantly improve the number of Denny’s nearing a La Quinta; as the radius increases, the number of Denny’s per unit area decreases.
+
+For the histogram, x-axis represents the distance of all La Quinta to their nearest Dennys and y-axis represent the density of distance. We would conclude that the idea of La Quinta would be close to Dennys makes sense in some extent depending on how we define the distance. 
+
+```{r}
+load("data/dennys.Rdata") #Load Denny's Data
+load("data/lq.Rdata") #Load La Quinta Data
+library(rvest)
+library(tibble)
+library(dplyr)
+library(ggplot2)
+library(methods)
+
+radius = seq(0.1, 1, 0.1)   #create radius sequence 
+rate.total = rep(NA, 10)    # create a variable rate.total storing rate values
+min.dist = rep(NA, length(hotels[[1]]))  #create a variable called min.dist storing minimum values of distance
+for(j in seq_along(radius)){
+  count = 0 #create index
+for(i in seq_along(hotels[[1]])) #Create a loop to generate pairwise distances
+  {
+  rad <- pi/180 #Calculate radians
+  a1 <- as.numeric(dennys.US$lat) * rad #Convert latitude in radians 
+  a2 <- as.numeric(dennys.US$long) * rad #Convert longitude in radians
+  b1 <- as.numeric(hotels$lat)[i] * rad #Convert latitude in radians
+  b2 <- as.numeric(hotels$long)[i] * rad #Convert longitude in radians
+  d_long <- b2 - a2 #Calculate the longitude distance between two points
+  d_lat <- b1 - a1 #Calculate the latitude distance between two points
+  a <- (sin(d_lat/2))^2 + cos(a1) * cos(b1) * (sin(d_long/2))^2 #Calculate the haversine of the central angle between two points
+  R <- 3959 #Set radius of Earth
+  d <- R * 2 * atan2(sqrt(a), sqrt(1 - a)) #Apply inverse haversine to calculate the spatial distance
+  min.dist[i] = min(d)  #store minimum values to min.dist
+  if(min(d) < radius[j]){
+    count = count +1 #Count the number of La Quinta next to a Denny's
+  }
+  rate.total[j] = count/length(hotels[[1]])  #calculate the rate in the radius ranges
+}
+}
+
+rate.total  #Calculate the rate that a Denny's exists in 1-mile range of a La Quinta
+
+
+
+df = data_frame(radius, rate.total) #Create a dataframe including radius and rate
+ggplot(data = df, aes(x = df$radius, y = df$rate.total)) +  #Use ggplot to visualize the relationship between minimum distance and rate
+  geom_point(aes(colour = df$radius)) +  #Change the color of points
+  geom_line(aes(colour = df$radius), size = 1) + #Change the color of lines 
+  xlab("Minimum Distance") + #Create x-axis label
+  ylab("Rate") +  #Create y-axis label
+  ggtitle("Cumulative Distribution between Minimum Distance and Rate") #Create a title 
+
+hist(min.dist, breaks = 500, freq = FALSE, xlim = c(0,100), ylim = c(0, 0.4), main = "Distance between La Quinta and Nearest Denny's") #Use histogram to visualize minimum distance and rate
+```
